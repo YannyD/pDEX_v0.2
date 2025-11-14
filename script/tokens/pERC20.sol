@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {
+    ERC20Permit
+} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 
-contract pERC20 is ERC20 {
+contract pERC20 is ERC20, ERC20Permit {
     error NotAccreditedInvestor(address investor);
     address public manager;
     mapping(address => bool) public accreditedInvestors;
@@ -11,8 +14,9 @@ contract pERC20 is ERC20 {
         string memory name,
         string memory symbol,
         address managerAddress
-    ) ERC20(name, symbol) {
+    ) ERC20(name, symbol) ERC20Permit(name) {
         manager = managerAddress;
+        accreditedInvestors[managerAddress] = true;
         _mint(manager, 1000000 * 10 ** decimals());
     }
 

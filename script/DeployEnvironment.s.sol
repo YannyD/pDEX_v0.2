@@ -5,7 +5,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {pDEX} from "../src/pDEX.sol";
 import "./tokens/index.sol";
 
-contract pDEXScript is Script {
+contract DeployEnvironment is Script {
     pDEX public pdex;
     pERC20 public permissionedToken;
     MockERC20 public mockTokenA;
@@ -15,9 +15,10 @@ contract pDEXScript is Script {
     address verifier = 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC;
     address pDexDeployer = 0x90F79bf6EB2c4f870365E785982E1f101E93b906;
 
-    function setUp() public {
+    function run() public {
         vm.startPrank(pDexDeployer);
         pdex = new pDEX();
+        console.log("pDEX deployed at:", address(pdex));
         vm.stopPrank();
         vm.startPrank(seller);
         permissionedToken = new pERC20(
@@ -25,16 +26,14 @@ contract pDEXScript is Script {
             "pTOK",
             msg.sender
         );
+        console.log(
+            "Permissioned Token deployed at:",
+            address(permissionedToken)
+        );
         vm.stopPrank();
         vm.startPrank(buyer);
         mockTokenA = new MockERC20("Mock Token A", "mTOKA", 10000000);
+        console.log("Mock Token A deployed at:", address(mockTokenA));
         vm.stopPrank();
-        // mockTokenB = new MockERC20("Mock Token B", "mTOKB", 10000000);
-    }
-
-    function run() public {
-        vm.startBroadcast();
-
-        vm.stopBroadcast();
     }
 }

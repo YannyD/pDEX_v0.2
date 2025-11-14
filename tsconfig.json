@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "outDir": "dist"
   },
-  "include": ["test_ts"]
+  "include": ["ts/tests"]
 }
