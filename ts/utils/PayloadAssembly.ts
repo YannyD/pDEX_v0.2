@@ -21,6 +21,7 @@ export async function signSellerOrder(
 
 //todo: make this a dynamic function for any erc to be permitted
 export async function signPermit(wallet: WalletClient, permit: types.Permit) {
+  console.log("Signing permit with wallet account: ", wallet);
   return await wallet.signTypedData({
     account: wallet.account!,
     domain: eip712Types.pERC20Domain,

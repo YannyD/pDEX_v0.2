@@ -5,6 +5,7 @@ import {
   createWalletClient,
   parseSignature,
 } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 
 import { describe, it, expect, beforeAll } from "vitest";
 import * as dotenv from "dotenv";
@@ -34,43 +35,52 @@ let publicClient: ReturnType<typeof createPublicClient> = createPublicClient({
   transport: http("http://127.0.0.1:8545"),
 });
 
-beforeAll(() => {
+beforeAll(async () => {
+  //!fix all wallets
+  const sellerAccount = privateKeyToAccount(sellerPrivateKey);
   seller = createWalletClient({
+    account: sellerAccount,
     chain: foundry,
     transport: http("http://127.0.0.1:8545"),
-    account: sellerPrivateKey,
   });
   buyer = createWalletClient({
     chain: foundry,
     transport: http("http://127.0.0.1:8545"),
-    account: buyerPrivateKey,
+    account: privateKeyToAccount(buyerPrivateKey),
   });
   verifier = createWalletClient({
     chain: foundry,
     transport: http("http://127.0.0.1:8545"),
-    account: verifierPrivateKey,
+    account: privateKeyToAccount(verifierPrivateKey),
   });
   pDexAdmin = createWalletClient({
     chain: foundry,
     transport: http("http://127.0.0.1:8545"),
-    account: pDexAdminPrivateKey,
+    account: privateKeyToAccount(pDexAdminPrivateKey),
   });
 });
 
+const pDEXAddress =
+  "0x057ef64E23666F000b34aE31332854aCBd1c8544" as `0x${string}`;
+const mockERC20Address =
+  "0x8464135c8F25Da09e49BC8782676a84730C318bC" as `0x${string}`;
+const pERC20Address =
+  "0x5FbDB2315678afecb367f032d93F642f64180aa3" as `0x${string}`;
+
 const pDEXContract = getContract({
-  address: "0x057ef64E23666F000b34aE31332854aCBd1c8544",
+  address: pDEXAddress,
   abi: pdexABI,
   client: publicClient,
 });
 
 const mockERC20Contract = getContract({
-  address: "0x8464135c8F25Da09e49BC8782676a84730C318bC",
+  address: mockERC20Address,
   abi: mockERC20ABI,
   client: publicClient,
 });
 
 const pERC20Contract = getContract({
-  address: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  address: pERC20Address,
   abi: pERC20ABI,
   client: publicClient,
 });
@@ -78,14 +88,20 @@ const pERC20Contract = getContract({
 describe("Sending transactions to pDEX protocol contracts", () => {
   // it("Should confirm contract deployments", async () => {});
   it("Should match order and successfully send to pDEX", async () => {
+    console.log("Starting order submission test...");
+
+    const nonceBeforePermit = await pERC20Contract.read.nonces([
+      seller.account!.address,
+    ]);
+    console.log("nonceBeforePermit:", nonceBeforePermit);
+    console.log("nonce type: ", typeof nonceBeforePermit);
+
     //sign permit for meta-approval
     const permitPayload = {
-      owner: process.env.sellerWalletAddress as `0x${string}`,
-      spender: pDEXContract.address,
+      owner: seller.account!.address,
+      spender: pDEXAddress,
       value: "5000",
-      nonce: (
-        (await pERC20Contract.read.nonces([seller.account!])) as bigint
-      ).toString(), // fetch from token
+      nonce: (nonceBeforePermit as bigint).toString(), // viem requires a string
       deadline: (Math.floor(Date.now() / 1000) + 3600).toString(), // 1 hour from now
     };
 
@@ -95,21 +111,23 @@ describe("Sending transactions to pDEX protocol contracts", () => {
     );
 
     console.log("Permit Signature:", sellerPermitSignature);
-    const { r, s, yParity } = parseSignature(sellerPermitSignature);
-    const v = BigInt(yParity) + 27n; // Ethereum expects 27 or 28
+    // const { r, s, yParity } = parseSignature(sellerPermitSignature);
+    // const v = BigInt(yParity) + 27n; // Ethereum expects 27 or 28
 
     //construct and sign order
+    console.log("pERC20Address: ", pERC20Address);
+    console.log("mockERC20Address: ", mockERC20Address);
     //todo: add multiple volumes
     const orderPayload = {
       order: {
-        seller: process.env.sellerWalletAddress as `0x${string}`,
-        forSaleTokenAddress: pERC20Contract.address,
-        paymentTokenAddress: mockERC20Contract.address,
+        seller: seller.account!.address,
+        forSaleTokenAddress: pERC20Address,
+        paymentTokenAddress: mockERC20Address,
         minVolume: "100",
         maxVolume: "500000",
         pricePerToken: "20000",
         expiry: (Math.floor(Date.now() / 1000) + 3600).toString(), // 1 hour from now
-        nonce: 1n,
+        nonce: "1",
       },
       rules: [
         {
@@ -124,18 +142,52 @@ describe("Sending transactions to pDEX protocol contracts", () => {
         value: permitPayload.value,
         nonce: permitPayload.nonce,
         deadline: permitPayload.deadline,
-        v: v,
-        r: r,
-        s: s,
       },
     };
 
     const orderSignature = await seller.signTypedData({
       account: seller.account!,
-      domain: eip712Types.domain,
+      domain: {
+        ...eip712Types.domain,
+        verifyingContract: pDEXAddress,
+        chainId: BigInt(foundry.id),
+      },
       types: eip712Types.orderTypes,
       primaryType: "Order",
-      message: orderPayload,
+      message: {
+        order: orderPayload.order,
+        rules: orderPayload.rules,
+        permit: orderPayload.permit,
+      },
     });
+    const initialSellerBalance = await mockERC20Contract.read.balanceOf([
+      seller.account!,
+    ]);
+    //@ts-ignore
+    console.log("Initial Seller Balance:", initialSellerBalance.toString());
+    const transactionToDEX = await pDEXContract.write.executeOrder({
+      //@ts-ignore
+      args: [
+        {
+          ...orderPayload.order,
+          rules: orderPayload.rules,
+          permit: orderPayload.permit,
+        },
+        orderSignature,
+      ],
+      account: verifier.account!,
+      gasLimit: 5_000_000n,
+    });
+
+    // Log the transaction hash for debugging
+    console.log("Transaction hash: ", transactionToDEX);
+    const finalResult = await publicClient.waitForTransactionReceipt({
+      hash: transactionToDEX,
+    });
+
+    const finalSellerBalance = (await mockERC20Contract.read.balanceOf([
+      seller.account!,
+    ])) as bigint;
+    console.log("Final Seller Balance:", finalSellerBalance.toString());
   });
 });

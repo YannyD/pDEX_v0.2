@@ -14,6 +14,8 @@ import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
 contract pDEX {
     using ECDSA for bytes32;
+
+    // EIP-712 Domain Separator ensures signature is unqiuely tied to this contract, conforming to the EIP-712 standard.
     bytes32 public DOMAIN_SEPARATOR;
     constructor() {
         DOMAIN_SEPARATOR = keccak256(
@@ -29,6 +31,9 @@ contract pDEX {
         );
     }
 
+    // The Order struct defines required details for a proposed token sale. It includes a nested array of Rules
+    // as well as PermitData that enables token transfer for ERC20Permit compatible tokens.
+
     struct Order {
         address seller;
         address forSaleTokenAddress;
@@ -41,10 +46,23 @@ contract pDEX {
         Rule[] rules;
         PermitData permit;
     }
+
+    // The Rule struct defines conditions for limited partners holding regulated tokens.
+    // the ruleType value represents an enum value that indicates whether the rule can be contract enforcable
+    // or requires offchain verification.
+
+    // enum RuleType {
+    //   CONTRACT_ENFORCEABLE = 0,
+    //   OFFCHAIN_VERIFIER = 1
+    // }
     struct Rule {
         uint8 ruleType;
         string key;
         bytes value;
+    }
+    enum ruleType {
+        CONTRACT_ENFORCEABLE,
+        OFFCHAIN_VERIFIER
     }
     struct PermitData {
         address owner;
@@ -58,7 +76,9 @@ contract pDEX {
 
     bytes32 public constant ORDER_TYPEHASH =
         keccak256(
-            "Order(address seller,address token,address paymentToken,uint256 amount,uint256 pricePerToken,uint256 expiry,uint256 nonce,Rule[] rules,PermitData permit)Rule(uint8 ruleType,string key,bytes value)PermitData(address owner,uint256 value,uint256 deadline,uint256 nonce,uint8 v,bytes32 r,bytes32 s)"
+            "Order(address seller,address forSaleTokenAddress,address paymentTokenAddress,uint256 minVolume,uint256 maxVolume,uint256 pricePerToken,uint256 expiry,uint256 nonce,Rule[] rules,PermitData permit)"
+            "Rule(uint8 ruleType,string key,bytes value)"
+            "PermitData(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
         );
 
     bytes32 public constant RULE_TYPEHASH =
@@ -67,12 +87,12 @@ contract pDEX {
     //required when NOT using ERC20Permit
     bytes32 public constant PERMIT_TYPEHASH =
         keccak256(
-            "PermitData(address owner,uint256 value,uint256 deadline,uint256 nonce,uint8 v,bytes32 r,bytes32 s)"
+            "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
         );
 
     mapping(address => mapping(uint256 => bool)) public filledOrders;
 
-    //hash a rule deterministically
+    //Internal hashing functions are used to recompute the EIP-712 struct hashes for Rules, Permits, and Orders.
     function _hashRule(Rule memory rule) internal pure returns (bytes32) {
         return
             keccak256(
@@ -182,7 +202,11 @@ contract pDEX {
             order.permit.r,
             order.permit.s
         );
-
+        IERC20(order.forSaleTokenAddress).transferFrom(
+            order.seller,
+            msg.sender,
+            order.maxVolume
+        );
         //todo: buyer permit
         //todo: transfer tokens
         //todo: display public information

@@ -1,3 +1,4 @@
+import type { TypedDataDomain } from "viem";
 // Order Types for EIP-712
 export const orderTypes = {
   Rule: [
@@ -11,9 +12,6 @@ export const orderTypes = {
     { name: "value", type: "uint256" },
     { name: "nonce", type: "uint256" },
     { name: "deadline", type: "uint256" },
-    { name: "v", type: "uint8" },
-    { name: "r", type: "bytes32" },
-    { name: "s", type: "bytes32" },
   ],
   Order: [
     { name: "seller", type: "address" },
@@ -30,8 +28,8 @@ export const orderTypes = {
 };
 
 // --- EIP-712 Domain ---
-export const domain = {
-  name: "pDEXOrder",
+export const domain: TypedDataDomain = {
+  name: "pDEX",
   version: "1",
   chainId: 31337, // Anvil default
   verifyingContract:
