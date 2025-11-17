@@ -4,39 +4,54 @@ import {
   getContract,
   createWalletClient,
   parseSignature,
+  DeployContractReturnType,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
 import { describe, it, expect, beforeAll } from "vitest";
 import * as dotenv from "dotenv";
 import { foundry } from "viem/chains";
-import pDexAbi from "../../out/pDEX.sol/pDEX.json";
-import MockERC20Abi from "../../out/MockERC20.sol/MockERC20.json";
+import pDexAbiJson from "../../out/pDEX.sol/pDEX.json";
+import MockERC20AbiJson from "../../out/MockERC20.sol/MockERC20.json";
 import pERC20Abi from "../../out/pERC20.sol/pERC20.json";
 import * as payloadAssembly from "../utils/PayloadAssembly";
 import * as eip712Types from "../eip712/index";
 
+//keys provided by anvil --mnemonic "test test test test test test test test test test test junk"
 dotenv.config();
 const sellerPrivateKey = process.env.seller_private_key as `0x${string}`;
 const buyerPrivateKey = process.env.buyer_private_key as `0x${string}`;
 const verifierPrivateKey = process.env.verifier_private_key as `0x${string}`;
 const pDexAdminPrivateKey = process.env.pDex_admin_private_key as `0x${string}`;
 
-const pdexABI = pDexAbi.abi;
-const mockERC20ABI = MockERC20Abi.abi;
+//Contracts included in this test include:
+// pDEX - the main protocol contract
+// MockERC20 - a mock payment token implementing ERC20Permit standard
+// pERC20 - a sample permissioned security token, which implements ERC20Permit and uses a whitelist
+// to restrict transfers for only qualified investors
+
+const pdexABI = pDexAbiJson.abi;
+let pDexAddress: `0x${string}`;
+const mockERC20ABI = MockERC20AbiJson.abi;
+let mockERC20Address: `0x${string}`;
 const pERC20ABI = pERC20Abi.abi;
+let pERC20Address: `0x${string}`;
 
 let seller: ReturnType<typeof createWalletClient>;
+let sellerAddress: `0x${string}`;
 let buyer: ReturnType<typeof createWalletClient>;
+let buyerAddress: `0x${string}`;
 let verifier: ReturnType<typeof createWalletClient>;
+let verifierAddress: `0x${string}`;
 let pDexAdmin: ReturnType<typeof createWalletClient>;
+let pDexAdminAddress: `0x${string}`;
 let publicClient: ReturnType<typeof createPublicClient> = createPublicClient({
   chain: foundry,
   transport: http("http://127.0.0.1:8545"),
 });
 
 beforeAll(async () => {
-  //!fix all wallets
+  //Initialize all wallet clients for test accounts
   const sellerAccount = privateKeyToAccount(sellerPrivateKey);
   seller = createWalletClient({
     account: sellerAccount,
@@ -58,17 +73,54 @@ beforeAll(async () => {
     transport: http("http://127.0.0.1:8545"),
     account: privateKeyToAccount(pDexAdminPrivateKey),
   });
+
+  pDexAdminAddress = pDexAdmin.account!.address;
+  sellerAddress = seller.account!.address;
+  buyerAddress = buyer.account!.address;
+  verifierAddress = verifier.account!.address;
+
+  //Deploy contracts and set addresses
+  // pDEX Deployment
+  const pDexContractTx = await pDexAdmin.deployContract({
+    abi: pdexABI,
+    account: pDexAdminAddress,
+    bytecode: pDexAbiJson.bytecode.object as `0x${string}`,
+    args: [],
+  });
+  const pDexContractReceipt = await publicClient.waitForTransactionReceipt({
+    hash: pDexContractTx,
+  });
+  pDexAddress = pDexContractReceipt.contractAddress!;
+
+  //Mock Erc20 Deployment
+  const mockERC20ContractTx = await buyer.deployContract({
+    abi: mockERC20ABI,
+    account: buyerAddress,
+    bytecode: MockERC20AbiJson.bytecode.object as `0x${string}`,
+    args: ["Mock USD Token", "MUSDT", BigInt(1000000)],
+  });
+  const mockERC20ContractReceipt = await publicClient.waitForTransactionReceipt(
+    {
+      hash: mockERC20ContractTx,
+    }
+  );
+  mockERC20Address = mockERC20ContractReceipt.contractAddress!;
+
+  // Permissioned ERC20 Deployment
+  const pERC20ContractTx = await seller.deployContract({
+    abi: pERC20ABI,
+    account: sellerAddress,
+    bytecode: pERC20Abi.bytecode.object as `0x${string}`,
+    args: ["Permissioned Security Token", "PST", BigInt(1000000)],
+  });
+  const pERC20ContractReceipt = await publicClient.waitForTransactionReceipt({
+    hash: pERC20ContractTx,
+  });
+  pERC20Address = pERC20ContractReceipt.contractAddress!;
 });
 
-const pDEXAddress =
-  "0x057ef64E23666F000b34aE31332854aCBd1c8544" as `0x${string}`;
-const mockERC20Address =
-  "0x8464135c8F25Da09e49BC8782676a84730C318bC" as `0x${string}`;
-const pERC20Address =
-  "0x5FbDB2315678afecb367f032d93F642f64180aa3" as `0x${string}`;
-
 const pDEXContract = getContract({
-  address: pDEXAddress,
+  address: pDexAddress,
   abi: pdexABI,
   client: publicClient,
 });
@@ -99,7 +151,7 @@ describe("Sending transactions to pDEX protocol contracts", () => {
     //sign permit for meta-approval
     const permitPayload = {
       owner: seller.account!.address,
-      spender: pDEXAddress,
+      spender: pDexAddress,
       value: "5000",
       nonce: (nonceBeforePermit as bigint).toString(), // viem requires a string
       deadline: (Math.floor(Date.now() / 1000) + 3600).toString(), // 1 hour from now
@@ -149,7 +201,7 @@ describe("Sending transactions to pDEX protocol contracts", () => {
       account: seller.account!,
       domain: {
         ...eip712Types.domain,
-        verifyingContract: pDEXAddress,
+        verifyingContract: pDexAddress,
         chainId: BigInt(foundry.id),
       },
       types: eip712Types.orderTypes,

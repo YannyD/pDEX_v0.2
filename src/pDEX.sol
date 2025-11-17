@@ -175,7 +175,6 @@ contract pDEX {
         bytes calldata signature
     ) external {
         //todo confirm rules
-
         require(block.timestamp <= order.expiry, "expired"); //ensure order not expired
         require(
             !filledOrders[order.seller][order.nonce],
