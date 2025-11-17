@@ -5,6 +5,7 @@ import {
   createWalletClient,
   parseSignature,
   DeployContractReturnType,
+  TypedDataDomain,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
@@ -12,8 +13,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 import * as dotenv from "dotenv";
 import { foundry } from "viem/chains";
 import pDexAbiJson from "../../out/pDEX.sol/pDEX.json";
-import MockERC20AbiJson from "../../out/MockERC20.sol/MockERC20.json";
-import pERC20Abi from "../../out/pERC20.sol/pERC20.json";
+import MockERC20AbiJson from "../../out/MockERC20.sol/MockERC20Permit.json";
+import pERC20AbiJson from "../../out/pERC20.sol/pERC20.json";
 import * as payloadAssembly from "../utils/PayloadAssembly";
 import * as eip712Types from "../eip712/index";
 
@@ -32,10 +33,13 @@ const pDexAdminPrivateKey = process.env.pDex_admin_private_key as `0x${string}`;
 
 const pdexABI = pDexAbiJson.abi;
 let pDexAddress: `0x${string}`;
+let pDexContract: DeployContractReturnType;
 const mockERC20ABI = MockERC20AbiJson.abi;
 let mockERC20Address: `0x${string}`;
-const pERC20ABI = pERC20Abi.abi;
+let mockERC20Contract: DeployContractReturnType;
+const pERC20ABI = pERC20AbiJson.abi;
 let pERC20Address: `0x${string}`;
+let pERC20Contract: DeployContractReturnType;
 
 let seller: ReturnType<typeof createWalletClient>;
 let sellerAddress: `0x${string}`;
@@ -91,6 +95,7 @@ beforeAll(async () => {
     hash: pDexContractTx,
   });
   pDexAddress = pDexContractReceipt.contractAddress!;
+  console.log("pDexAddress:", pDexAddress);
 
   //Mock Erc20 Deployment
   const mockERC20ContractTx = await buyer.deployContract({
@@ -110,115 +115,153 @@ beforeAll(async () => {
   const pERC20ContractTx = await seller.deployContract({
     abi: pERC20ABI,
     account: sellerAddress,
-    bytecode: pERC20Abi.bytecode.object as `0x${string}`,
-    args: ["Permissioned Security Token", "PST", BigInt(1000000)],
+    bytecode: pERC20AbiJson.bytecode.object as `0x${string}`,
+    args: [
+      "Permissioned Security Token",
+      "PST",
+      sellerAddress,
+      BigInt(1000000),
+    ],
   });
   const pERC20ContractReceipt = await publicClient.waitForTransactionReceipt({
     hash: pERC20ContractTx,
   });
   pERC20Address = pERC20ContractReceipt.contractAddress!;
-});
 
-const pDEXContract = getContract({
-  address: pDexAddress,
-  abi: pdexABI,
-  client: publicClient,
-});
+  pDexContract = getContract({
+    address: pDexAddress,
+    abi: pdexABI,
+    client: publicClient,
+  });
 
-const mockERC20Contract = getContract({
-  address: mockERC20Address,
-  abi: mockERC20ABI,
-  client: publicClient,
-});
+  mockERC20Contract = getContract({
+    address: mockERC20Address,
+    abi: mockERC20ABI,
+    client: publicClient,
+  });
 
-const pERC20Contract = getContract({
-  address: pERC20Address,
-  abi: pERC20ABI,
-  client: publicClient,
+  pERC20Contract = getContract({
+    address: pERC20Address,
+    abi: pERC20ABI,
+    client: publicClient,
+  });
 });
 
 describe("Sending transactions to pDEX protocol contracts", () => {
-  // it("Should confirm contract deployments", async () => {});
   it("Should match order and successfully send to pDEX", async () => {
     console.log("Starting order submission test...");
 
-    const nonceBeforePermit = await pERC20Contract.read.nonces([
-      seller.account!.address,
-    ]);
-    console.log("nonceBeforePermit:", nonceBeforePermit);
-    console.log("nonce type: ", typeof nonceBeforePermit);
-
     //sign permit for meta-approval
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 60 * 60); // 1 hour from now
+    console.log("pErc20 Address: ", pERC20Address);
+    console.log("Seller Address: ", sellerAddress);
+
+    const nonceBeforePermit = await publicClient.readContract({
+      address: pERC20Address,
+      abi: pERC20ABI,
+      functionName: "nonces",
+      args: [sellerAddress],
+    });
+    console.log("Nonce before permit:", nonceBeforePermit);
+    //todo: make the permit value dynamic based on order size or purchase agreement
+    //! Question for Sean:  will multiple signatures be sent and verifier has to choose the correct one?
+
+    // todo when handling with and without approve note that a nonce may be needed again here or we can simplify with one nonce in order
     const permitPayload = {
-      owner: seller.account!.address,
+      owner: sellerAddress,
       spender: pDexAddress,
-      value: "5000",
-      nonce: (nonceBeforePermit as bigint).toString(), // viem requires a string
-      deadline: (Math.floor(Date.now() / 1000) + 3600).toString(), // 1 hour from now
+      value: BigInt(5000),
+      nonce: nonceBeforePermit,
+      deadline: deadline,
     };
 
-    const sellerPermitSignature = await payloadAssembly.signPermit(
-      seller,
-      permitPayload
-    );
+    const chainId = await publicClient.getChainId();
 
-    console.log("Permit Signature:", sellerPermitSignature);
-    // const { r, s, yParity } = parseSignature(sellerPermitSignature);
-    // const v = BigInt(yParity) + 27n; // Ethereum expects 27 or 28
+    const permitDomain = {
+      name: "Permissioned Security Token",
+      version: "1",
+      chainId: chainId,
+      verifyingContract: pERC20Address,
+    };
+
+    const sellerPermitSignature = await seller.signTypedData({
+      account: seller.account!,
+      domain: permitDomain,
+      types: { Permit: eip712Types.orderTypes.Permit },
+      primaryType: "Permit",
+      message: permitPayload,
+    });
+
+    const { r, s, v } = parseSignature(sellerPermitSignature);
 
     //construct and sign order
-    console.log("pERC20Address: ", pERC20Address);
-    console.log("mockERC20Address: ", mockERC20Address);
     //todo: add multiple volumes
     const orderPayload = {
       order: {
-        seller: seller.account!.address,
+        seller: sellerAddress,
         forSaleTokenAddress: pERC20Address,
         paymentTokenAddress: mockERC20Address,
-        minVolume: "100",
-        maxVolume: "500000",
-        pricePerToken: "20000",
-        expiry: (Math.floor(Date.now() / 1000) + 3600).toString(), // 1 hour from now
-        nonce: "1",
+        minVolume: BigInt("100"),
+        maxVolume: BigInt("500000"),
+        pricePerToken: BigInt("20000"),
+        expiry: BigInt(Math.floor(Date.now() / 1000) + 3600), // 1 hour from now
+        nonce: nonceBeforePermit, //reuse permit nonce for simplicity
       },
       rules: [
         {
           ruleType: 1,
           key: "Location",
-          value: "Houston, TX",
+          value: "0x" + Buffer.from("Houston, TX").toString("hex"),
         },
       ],
       permit: {
         owner: permitPayload.owner,
         spender: permitPayload.spender,
         value: permitPayload.value,
-        nonce: permitPayload.nonce,
         deadline: permitPayload.deadline,
       },
     };
 
+    const orderDomain: TypedDataDomain = {
+      name: "pDEX",
+      version: "1",
+      chainId: chainId,
+      verifyingContract: pDexAddress,
+    };
+
     const orderSignature = await seller.signTypedData({
       account: seller.account!,
-      domain: {
-        ...eip712Types.domain,
-        verifyingContract: pDexAddress,
-        chainId: BigInt(foundry.id),
-      },
+      domain: orderDomain,
       types: eip712Types.orderTypes,
       primaryType: "Order",
       message: {
-        order: orderPayload.order,
+        ...orderPayload.order,
         rules: orderPayload.rules,
         permit: orderPayload.permit,
       },
     });
-    const initialSellerBalance = await mockERC20Contract.read.balanceOf([
-      seller.account!,
-    ]);
-    //@ts-ignore
-    console.log("Initial Seller Balance:", initialSellerBalance.toString());
-    const transactionToDEX = await pDEXContract.write.executeOrder({
-      //@ts-ignore
+    // const initialSellerBalance: any = await mockERC20Contract.read.balanceOf([
+    //   seller.account!,
+    // ]);
+
+    const initialSellerPErc20Balance: any = await publicClient.readContract({
+      address: pERC20Address,
+      abi: pERC20ABI,
+      functionName: "balanceOf",
+      args: [sellerAddress],
+    });
+
+    console.log(
+      "Initial Seller pERC20 Balance:",
+      initialSellerPErc20Balance.toString()
+    );
+
+    // console.log("Initial Seller Balance:", initialSellerBalance);
+
+    const transactionToDEX = await verifier.writeContract({
+      address: pDexAddress,
+      abi: pdexABI,
+      functionName: "executeTrade",
       args: [
         {
           ...orderPayload.order,
@@ -226,9 +269,10 @@ describe("Sending transactions to pDEX protocol contracts", () => {
           permit: orderPayload.permit,
         },
         orderSignature,
+        v,
+        r,
+        s,
       ],
-      account: verifier.account!,
-      gasLimit: 5_000_000n,
     });
 
     // Log the transaction hash for debugging
@@ -237,9 +281,23 @@ describe("Sending transactions to pDEX protocol contracts", () => {
       hash: transactionToDEX,
     });
 
-    const finalSellerBalance = (await mockERC20Contract.read.balanceOf([
-      seller.account!,
-    ])) as bigint;
-    console.log("Final Seller Balance:", finalSellerBalance.toString());
+    // const finalSellerBalance = (await mockERC20Contract.read.balanceOf([
+    //   seller.account!,
+    // ])) as bigint;
+    // console.log("Final Seller Balance:", finalSellerBalance.toString());
+    const finalSellerPErc20Balance = await publicClient.readContract({
+      address: pERC20Address,
+      abi: pERC20ABI,
+      functionName: "balanceOf",
+      args: [sellerAddress],
+    });
+    console.log(
+      "Final Seller pERC20 Balance:",
+      finalSellerPErc20Balance.toString()
+    );
+
+    expect(finalSellerPErc20Balance).toBe(
+      initialSellerPErc20Balance - BigInt(orderPayload.permit.value)
+    );
   });
 });

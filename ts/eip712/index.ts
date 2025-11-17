@@ -13,6 +13,12 @@ export const orderTypes = {
     { name: "nonce", type: "uint256" },
     { name: "deadline", type: "uint256" },
   ],
+  PermitData: [
+    { name: "owner", type: "address" },
+    { name: "spender", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
   Order: [
     { name: "seller", type: "address" },
     { name: "forSaleTokenAddress", type: "address" },
@@ -23,7 +29,7 @@ export const orderTypes = {
     { name: "expiry", type: "uint256" },
     { name: "nonce", type: "uint256" },
     { name: "rules", type: "Rule[]" }, // include rules here
-    { name: "permit", type: "Permit" }, // include permit here
+    { name: "permit", type: "PermitData" }, // include permit here
   ],
 };
 

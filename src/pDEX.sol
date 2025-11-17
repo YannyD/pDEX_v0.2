@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 //todo: sort rules to enforce onchain ones via dex
 //todo: send private buyer data
 //todo: add options for both erc20-permit and regular approve
+//todo: make verifier add accredited investors
 
 // uses eip 712 for orders
 // uses eip 7702 for permission
@@ -69,26 +70,23 @@ contract pDEX {
         address spender;
         uint256 value;
         uint256 deadline;
-        uint8 v;
-        bytes32 r;
-        bytes32 s;
     }
 
     bytes32 public constant ORDER_TYPEHASH =
         keccak256(
             "Order(address seller,address forSaleTokenAddress,address paymentTokenAddress,uint256 minVolume,uint256 maxVolume,uint256 pricePerToken,uint256 expiry,uint256 nonce,Rule[] rules,PermitData permit)"
+            "PermitData(address owner,address spender,uint256 value,uint256 deadline)"
             "Rule(uint8 ruleType,string key,bytes value)"
-            "PermitData(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
         );
 
     bytes32 public constant RULE_TYPEHASH =
         keccak256("Rule(uint8 ruleType,string key,bytes value)");
 
-    //required when NOT using ERC20Permit
-    bytes32 public constant PERMIT_TYPEHASH =
-        keccak256(
-            "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
-        );
+    //required when NOT using ERC20Permit ... may not need nonce if being used by order already
+    // bytes32 public constant PERMIT_TYPEHASH =
+    //     keccak256(
+    //         "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
+    //     );
 
     mapping(address => mapping(uint256 => bool)) public filledOrders;
 
@@ -112,15 +110,12 @@ contract pDEX {
             keccak256(
                 abi.encode(
                     keccak256(
-                        "Permit(address owner,address spender,uint256 value,uint256 deadline, uint8 v, bytes32 r, bytes32 s)"
+                        "PermitData(address owner,address spender,uint256 value,uint256 deadline)"
                     ),
                     permit.owner,
                     permit.spender,
                     permit.value,
-                    permit.deadline,
-                    permit.v,
-                    permit.r,
-                    permit.s
+                    permit.deadline
                 )
             );
     }
@@ -159,6 +154,13 @@ contract pDEX {
                 abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, structHash)
             );
     }
+    
+    // Public view function for testing
+    function computeOrderDigest(
+        Order memory order
+    ) public view returns (bytes32) {
+        return _computeOrderDigest(order);
+    }
 
     // ----------------------------------------
     // Execute Orders
@@ -170,9 +172,13 @@ contract pDEX {
      *@param signature The seller's signature on the order
      */
 
+    //todo: choose good function name
     function executeTrade(
         Order calldata order,
-        bytes calldata signature
+        bytes calldata signature,
+        uint8 permitV,
+        bytes32 permitR,
+        bytes32 permitS
     ) external {
         //todo confirm rules
         require(block.timestamp <= order.expiry, "expired"); //ensure order not expired
@@ -191,20 +197,27 @@ contract pDEX {
 
         //Call permit to allow DEX to transfer tokens on behalf of seller
         require(block.timestamp < order.permit.deadline, "Permit expired"); // Check if permit is expired
-        //! confirm permit expiration works
+
         IERC20Permit(order.forSaleTokenAddress).permit(
             order.permit.owner,
             order.permit.spender,
             order.permit.value,
             order.permit.deadline,
-            order.permit.v,
-            order.permit.r,
-            order.permit.s
+            permitV,
+            permitR,
+            permitS
         );
+        // Add buyer to the whitelist of the permissioned token
+        //? this is the main question, how can we be satisfied with this addition?  Who does it?
+        bytes4 selector = bytes4(keccak256("addAccreditedInvestor(address)"));
+        (bool ok, bytes memory data) = order.forSaleTokenAddress.call(
+            abi.encodeWithSelector(selector, address(this))
+        );
+
         IERC20(order.forSaleTokenAddress).transferFrom(
             order.seller,
-            msg.sender,
-            order.maxVolume
+            address(this),
+            order.permit.value //todo: adjust value sent based on buyer volume
         );
         //todo: buyer permit
         //todo: transfer tokens
