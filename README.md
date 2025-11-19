@@ -6,9 +6,13 @@ The pDex smart contract supports EIP-712 signed orders with embedded permit data
 
 The stack includes:
 
-- Solidity smart contract implementing the pDex logic with EIP-712 order signing and permit integration.
+- Solidity smart contract built in foundry implementing the pDex logic with EIP-712 order signing and permit integration.
 - TypeScript utilities for constructing and signing EIP-712 orders.
 - Test suite validating the pDex functionality and order execution flow.
+
+## Protocol Overview
+
+The pDEX protocol is comprised of an offchain order signing standard, broad definitions for permissioned token implementation, and a smart contract that executes trades submitted by broker/dealer verifiers.
 
 ### pDEX Offchain Signature Structure
 
@@ -64,6 +68,27 @@ BuyerData: [
 
 3. **Buyer's Execution Transaction**: The buyer signs an EIP-712 payload to confirm their intent to execute the trade.
 
+### Minimum Permissioned Token Interface
+
+The pDEX protocol assumes that permissioned tokens implement the following minimum interface to support trade execution and compliance. It includes standard ERC-20Permit functions, as well as a whitelist management function.
+
+```solidity
+interface IPermissionedToken {
+    function transfer(address to, uint256 amount) external returns (bool);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+    function balanceOf(address account) external view returns (uint256);
+    function addToWhitelist(address account) external;          // needs further design
+    function isWhitelisted(address account) external view returns (bool);
+    function permit(
+        address owner,
+        address spender,
+        uint256 value,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external;
+    function nonces(address owner) external view returns (uint256);
 ### pDEX Smart Contract Functionality
 
 The pDEX smart contracts performs the following checks and operations during trade execution:
@@ -77,3 +102,17 @@ The pDEX smart contracts performs the following checks and operations during tra
 4. **Trade Execution**: Facilitates the transfer of tokens between the seller and buyer based on the order parameters, utilizing the permit data for seamless token transfers.
 
 5. **Encrypted Data Transfer**: Handles any encrypted buyer information provided by the verifier, ensuring secure transmission to the asset manager as required.
+```
+
+### Current research topics
+
+_How can we add the buyer on the authority of the verifier's signature?_
+
+- How does a verifier get this authority?
+- Do we need a hold period to confirm the verifier's actions by the permissioned token's admin?
+- Do we need a massive database of verifiers and their public key?
+- Should we expect permissioned tokens to include a separate whitelist just for verifiers? Perhaps, it doesnt need individual wallet whitelist, but only a verifier whitelist? In this case only transfers with a signature of a broker dealer can take place ever? We just make a standard for them to sign?
+
+_What mechanism for permission management is minimally required?_
+
+- What is the current minimal interface for permissioned tokens to support pDEX operations?
