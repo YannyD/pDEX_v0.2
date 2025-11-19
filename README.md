@@ -63,3 +63,17 @@ BuyerData: [
 };
 
 3. **Buyer's Execution Transaction**: The buyer signs an EIP-712 payload to confirm their intent to execute the trade.
+
+### pDEX Smart Contract Functionality
+
+The pDEX smart contracts performs the following checks and operations during trade execution:
+
+1. **Order Validation**: Validates the seller's EIP-712 order signature to ensure authenticity and integrity of the order details.
+
+2. **Permit Verification**: Validates the permit data included in the order, allowing the pDEX contract to transfer tokens on behalf of the seller and buyer without prior on-chain approval.
+
+3. **Add Buyer to permissioned token's whitelist**: The pDEX is given permission to add the buyer to the permissioned token's whitelist on the authority of the verifier's signature.
+
+4. **Trade Execution**: Facilitates the transfer of tokens between the seller and buyer based on the order parameters, utilizing the permit data for seamless token transfers.
+
+5. **Encrypted Data Transfer**: Handles any encrypted buyer information provided by the verifier, ensuring secure transmission to the asset manager as required.

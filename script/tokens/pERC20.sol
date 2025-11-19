@@ -77,3 +77,9 @@ contract pERC20 is ERC20, ERC20Permit {
     // the pDex can be trusted to do what?  It can be trusted to send verifier information to the seller/ asset manager and it
     // can be trusted to send buyer info to the asset manager.  (of course it makes a change as well)
 }
+
+//Summary of challenge: We are adding the buyer on the authority of the verifier's signature.
+// How does a verifier get this authority?  Do we need a hold period to confirm the verifier's actions by the permissioned token's admin?
+// Do we start a massive database of verifiers and their public key?
+// Should we expect permissioned tokens to include a separate whitelist just for verifiers? Perhaps, it doesnt need individual wallet whitelist, but only a verifier whitelist?
+// In this case only transfers with a signature of a broker dealer can take place ever? We just make a standard for them to sign?
