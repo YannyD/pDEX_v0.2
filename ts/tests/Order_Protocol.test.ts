@@ -95,7 +95,6 @@ beforeAll(async () => {
     hash: pDexContractTx,
   });
   pDexAddress = pDexContractReceipt.contractAddress!;
-  console.log("pDexAddress:", pDexAddress);
 
   //Mock Erc20 Deployment
   const mockERC20ContractTx = await buyer.deployContract({
@@ -153,8 +152,6 @@ describe("Sending transactions to pDEX protocol contracts", () => {
 
     //sign permit for meta-approval
     const deadline = BigInt(Math.floor(Date.now() / 1000) + 60 * 60); // 1 hour from now
-    console.log("pErc20 Address: ", pERC20Address);
-    console.log("Seller Address: ", sellerAddress);
 
     const nonceBeforePermit = await publicClient.readContract({
       address: pERC20Address,
@@ -162,7 +159,6 @@ describe("Sending transactions to pDEX protocol contracts", () => {
       functionName: "nonces",
       args: [sellerAddress],
     });
-    console.log("Nonce before permit:", nonceBeforePermit);
     //todo: make the permit value dynamic based on order size or purchase agreement
     //! Question for Sean:  will multiple signatures be sent and verifier has to choose the correct one?
 
@@ -187,7 +183,7 @@ describe("Sending transactions to pDEX protocol contracts", () => {
     const sellerPermitSignature = await seller.signTypedData({
       account: seller.account!,
       domain: permitDomain,
-      types: { Permit: eip712Types.orderTypes.Permit },
+      types: eip712Types.erc20PermitTypes,
       primaryType: "Permit",
       message: permitPayload,
     });
@@ -229,20 +225,19 @@ describe("Sending transactions to pDEX protocol contracts", () => {
       verifyingContract: pDexAddress,
     };
 
+    const orderMessage = {
+      ...orderPayload.order,
+      rules: orderPayload.rules,
+      permit: orderPayload.permit,
+    };
+
     const orderSignature = await seller.signTypedData({
       account: seller.account!,
       domain: orderDomain,
       types: eip712Types.orderTypes,
       primaryType: "Order",
-      message: {
-        ...orderPayload.order,
-        rules: orderPayload.rules,
-        permit: orderPayload.permit,
-      },
+      message: orderMessage,
     });
-    // const initialSellerBalance: any = await mockERC20Contract.read.balanceOf([
-    //   seller.account!,
-    // ]);
 
     const initialSellerPErc20Balance: any = await publicClient.readContract({
       address: pERC20Address,
@@ -250,13 +245,6 @@ describe("Sending transactions to pDEX protocol contracts", () => {
       functionName: "balanceOf",
       args: [sellerAddress],
     });
-
-    console.log(
-      "Initial Seller pERC20 Balance:",
-      initialSellerPErc20Balance.toString()
-    );
-
-    // console.log("Initial Seller Balance:", initialSellerBalance);
 
     const transactionToDEX = await verifier.writeContract({
       address: pDexAddress,
@@ -275,8 +263,6 @@ describe("Sending transactions to pDEX protocol contracts", () => {
       ],
     });
 
-    // Log the transaction hash for debugging
-    console.log("Transaction hash: ", transactionToDEX);
     const finalResult = await publicClient.waitForTransactionReceipt({
       hash: transactionToDEX,
     });
@@ -291,10 +277,6 @@ describe("Sending transactions to pDEX protocol contracts", () => {
       functionName: "balanceOf",
       args: [sellerAddress],
     });
-    console.log(
-      "Final Seller pERC20 Balance:",
-      finalSellerPErc20Balance.toString()
-    );
 
     expect(finalSellerPErc20Balance).toBe(
       initialSellerPErc20Balance - BigInt(orderPayload.permit.value)

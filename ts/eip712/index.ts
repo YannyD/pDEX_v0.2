@@ -1,11 +1,7 @@
 import type { TypedDataDomain } from "viem";
-// Order Types for EIP-712
-export const orderTypes = {
-  Rule: [
-    { name: "ruleType", type: "uint8" },
-    { name: "key", type: "string" },
-    { name: "value", type: "bytes" },
-  ],
+
+// ERC20Permit type (used for signing token permit - includes nonce)
+export const erc20PermitTypes = {
   Permit: [
     { name: "owner", type: "address" },
     { name: "spender", type: "address" },
@@ -13,7 +9,17 @@ export const orderTypes = {
     { name: "nonce", type: "uint256" },
     { name: "deadline", type: "uint256" },
   ],
-  PermitData: [
+};
+
+// Order Types for EIP-712
+export const orderTypes = {
+  Rule: [
+    { name: "ruleType", type: "uint8" }, // enum to determine rule is CONTRACT_ENFORCEABLE or requires OFFCHAIN_VERIFIER
+    { name: "key", type: "string" },
+    { name: "value", type: "bytes" },
+  ],
+  Permit: [
+    //used for EIP 712. Nonce taken from Order
     { name: "owner", type: "address" },
     { name: "spender", type: "address" },
     { name: "value", type: "uint256" },
@@ -28,8 +34,8 @@ export const orderTypes = {
     { name: "pricePerToken", type: "uint256" },
     { name: "expiry", type: "uint256" },
     { name: "nonce", type: "uint256" },
-    { name: "rules", type: "Rule[]" }, // include rules here
-    { name: "permit", type: "PermitData" }, // include permit here
+    { name: "rules", type: "Rule[]" },
+    { name: "permit", type: "Permit" },
   ],
 };
 

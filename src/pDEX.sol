@@ -45,7 +45,7 @@ contract pDEX {
         uint256 expiry;
         uint256 nonce;
         Rule[] rules;
-        PermitData permit;
+        Permit permit;
     }
 
     // The Rule struct defines conditions for limited partners holding regulated tokens.
@@ -65,7 +65,7 @@ contract pDEX {
         CONTRACT_ENFORCEABLE,
         OFFCHAIN_VERIFIER
     }
-    struct PermitData {
+    struct Permit {
         address owner;
         address spender;
         uint256 value;
@@ -74,8 +74,8 @@ contract pDEX {
 
     bytes32 public constant ORDER_TYPEHASH =
         keccak256(
-            "Order(address seller,address forSaleTokenAddress,address paymentTokenAddress,uint256 minVolume,uint256 maxVolume,uint256 pricePerToken,uint256 expiry,uint256 nonce,Rule[] rules,PermitData permit)"
-            "PermitData(address owner,address spender,uint256 value,uint256 deadline)"
+            "Order(address seller,address forSaleTokenAddress,address paymentTokenAddress,uint256 minVolume,uint256 maxVolume,uint256 pricePerToken,uint256 expiry,uint256 nonce,Rule[] rules,Permit permit)"
+            "Permit(address owner,address spender,uint256 value,uint256 deadline)"
             "Rule(uint8 ruleType,string key,bytes value)"
         );
 
@@ -103,14 +103,12 @@ contract pDEX {
             );
     }
 
-    function _hashPermit(
-        PermitData memory permit
-    ) internal pure returns (bytes32) {
+    function _hashPermit(Permit memory permit) internal pure returns (bytes32) {
         return
             keccak256(
                 abi.encode(
                     keccak256(
-                        "PermitData(address owner,address spender,uint256 value,uint256 deadline)"
+                        "Permit(address owner,address spender,uint256 value,uint256 deadline)"
                     ),
                     permit.owner,
                     permit.spender,
@@ -154,7 +152,7 @@ contract pDEX {
                 abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, structHash)
             );
     }
-    
+
     // Public view function for testing
     function computeOrderDigest(
         Order memory order
