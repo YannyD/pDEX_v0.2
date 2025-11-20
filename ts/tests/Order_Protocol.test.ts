@@ -18,6 +18,11 @@ import pERC20AbiJson from "../../out/pERC20.sol/pERC20.json";
 import * as payloadAssembly from "../utils/PayloadAssembly";
 import * as eip712Types from "../eip712/index";
 
+//todo: make the permit value dynamic based on order size or purchase agreement from buyer
+//todo: add multiple volumes
+//todo: move payload assembly functions to its own file
+//! Question for Sean:  will multiple signatures be sent and verifier has to choose the correct one?
+
 //keys provided by anvil --mnemonic "test test test test test test test test test test test junk"
 dotenv.config();
 const sellerPrivateKey = process.env.seller_private_key as `0x${string}`;
@@ -159,10 +164,7 @@ describe("Sending transactions to pDEX protocol contracts", () => {
       functionName: "nonces",
       args: [sellerAddress],
     });
-    //todo: make the permit value dynamic based on order size or purchase agreement
-    //! Question for Sean:  will multiple signatures be sent and verifier has to choose the correct one?
 
-    // todo when handling with and without approve note that a nonce may be needed again here or we can simplify with one nonce in order
     const permitPayload = {
       owner: sellerAddress,
       spender: pDexAddress,
@@ -191,7 +193,6 @@ describe("Sending transactions to pDEX protocol contracts", () => {
     const { r, s, v } = parseSignature(sellerPermitSignature);
 
     //construct and sign order
-    //todo: add multiple volumes
     const orderPayload = {
       order: {
         seller: sellerAddress,

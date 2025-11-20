@@ -4,14 +4,16 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-//todo: sort rules to enforce onchain ones via dex
-//todo: send private buyer data
-//todo: add options for both erc20-permit and regular approve
-//todo: make verifier add accredited investors
 
-// uses eip 712 for orders
-// uses eip 7702 for permission
-// currently requires ERC20Permit tokens
+//todo: add buyer order
+//todo: add verifier signature
+//todo: implement hold and approve period for pDEX transactions when verifier submits for the first time.  Add them to whitelist for all future txs.  Is the whitelist on the issuance layer or the pDEX?  I think it should be on the pdex level.
+//todo: send private buyer data via DID
+//todo: confirm all correct data being transfered and collected
+//todo: implement multiple volume orders
+//todo: sort rules to enforce onchain ones via dex
+//todo: make verifier add accredited investors
+//todo: add options for both erc20-permit and regular approve
 
 contract pDEX {
     using ECDSA for bytes32;
@@ -72,6 +74,13 @@ contract pDEX {
         uint256 deadline;
     }
 
+    struct PurchaseAgreement {
+        address buyer;
+        uint256 volume;
+    }
+    // bytes buyerData; // Could be a hash or encrypted data
+
+    // Could be a hash or encrypted data
     bytes32 public constant ORDER_TYPEHASH =
         keccak256(
             "Order(address seller,address forSaleTokenAddress,address paymentTokenAddress,uint256 minVolume,uint256 maxVolume,uint256 pricePerToken,uint256 expiry,uint256 nonce,Rule[] rules,Permit permit)"
@@ -81,12 +90,6 @@ contract pDEX {
 
     bytes32 public constant RULE_TYPEHASH =
         keccak256("Rule(uint8 ruleType,string key,bytes value)");
-
-    //required when NOT using ERC20Permit ... may not need nonce if being used by order already
-    // bytes32 public constant PERMIT_TYPEHASH =
-    //     keccak256(
-    //         "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
-    //     );
 
     mapping(address => mapping(uint256 => bool)) public filledOrders;
 
@@ -160,6 +163,21 @@ contract pDEX {
         return _computeOrderDigest(order);
     }
 
+    function _hashPurchaseAgreement(
+        PurchaseAgreement memory agreement
+    ) internal pure returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(
+                    keccak256(
+                        "PurchaseAgreement(address buyer,uint256 volume)"
+                    ),
+                    agreement.buyer,
+                    agreement.volume
+                )
+            );
+    }
+
     // ----------------------------------------
     // Execute Orders
     // ----------------------------------------
@@ -170,15 +188,18 @@ contract pDEX {
      *@param signature The seller's signature on the order
      */
 
-    //todo: choose good function name
     function executeTrade(
         Order calldata order,
-        bytes calldata signature,
-        uint8 permitV,
-        bytes32 permitR,
-        bytes32 permitS
+        bytes calldata sellerSignature,
+        uint8 sellerPermitV,
+        bytes32 sellerPermitR,
+        bytes32 sellerPermitS,
+        PurchaseAgreement calldata purchaseAgreement,
+        bytes calldata buyerSignature,
+        uint8 buyerPermitV,
+        bytes32 buyerPermitR,
+        bytes32 buyerPermitS
     ) external {
-        //todo confirm rules
         require(block.timestamp <= order.expiry, "expired"); //ensure order not expired
         require(
             !filledOrders[order.seller][order.nonce],
@@ -187,7 +208,7 @@ contract pDEX {
 
         // Verify order signature
         bytes32 digest = _computeOrderDigest(order);
-        address signer = ECDSA.recover(digest, signature);
+        address signer = ECDSA.recover(digest, sellerSignature);
         require(signer == order.seller, "Invalid signature");
 
         // Mark order as filled
@@ -201,10 +222,11 @@ contract pDEX {
             order.permit.spender,
             order.permit.value,
             order.permit.deadline,
-            permitV,
-            permitR,
-            permitS
+            sellerPermitV,
+            sellerPermitR,
+            sellerPermitS
         );
+
         // Add buyer to the whitelist of the permissioned token
         //? this is the main question, how can we be satisfied with this addition?  Who does it?
         bytes4 selector = bytes4(keccak256("addAccreditedInvestor(address)"));
@@ -215,10 +237,7 @@ contract pDEX {
         IERC20(order.forSaleTokenAddress).transferFrom(
             order.seller,
             address(this),
-            order.permit.value //todo: adjust value sent based on buyer volume
+            order.permit.value
         );
-        //todo: buyer permit
-        //todo: transfer tokens
-        //todo: display public information
     }
 }

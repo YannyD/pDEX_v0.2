@@ -112,7 +112,26 @@ _How can we add the buyer on the authority of the verifier's signature?_
 - Do we need a hold period to confirm the verifier's actions by the permissioned token's admin?
 - Do we need a massive database of verifiers and their public key?
 - Should we expect permissioned tokens to include a separate whitelist just for verifiers? Perhaps, it doesnt need individual wallet whitelist, but only a verifier whitelist? In this case only transfers with a signature of a broker dealer can take place ever? We just make a standard for them to sign?
+- Required transfer agents could be easier than whitelist holder addresses
 
 _What mechanism for permission management is minimally required?_
 
 - What is the current minimal interface for permissioned tokens to support pDEX operations?
+  --> maybe each token needs to have a whitelist of verifiers? Any transaction requires a verifier signature?
+  --> we make a reigstry that anyone can use, but the permissioned tokens can define whichever registry they want.
+
+Token standard decides which list of people are trusted as a verifier.
+We want to make a big registry that that our folks use.
+The token issuer can get information about which verifiers conducted the trade.
+But we dont want anyone with access to the registry to list all the trades by a single verifier.
+
+Can we do both a holding period and objective verification?
+
+Decision:
+
+- v2 will be a system for a big registry that keeps trades secret
+- for now, implement the holding period. Figure our how asset managers are told about cap table updates and make sure
+  it can be done. Prob needs some data encryption for public events or run a DID.
+- learn more about how traditional data is sent from broker to the AM
+
+"Our objective is not to subvert regulation but to truly make it seamless and auditable"
